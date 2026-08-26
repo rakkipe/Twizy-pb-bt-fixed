@@ -8,6 +8,12 @@ let receiveBuffer = "";
 let logLines = [];
 let armedUntil = 0;
 let armTimer;
+let elmBuffer = "";
+let elmPending = null;
+let vlinkerInfo = "—";
+const localQueue = [];
+
+const adapterMode = () => $("#adapterMode").value;
 
 const terminal = $("#terminal");
 const connectButton = $("#connectButton");
@@ -34,10 +40,12 @@ function setConnected(connected) {
   disconnectButton.disabled = !connected;
   badge.className = `badge ${connected ? "online" : "offline"}`;
   badge.querySelector("span").textContent = connected ? "USB verbonden" : "Niet verbonden";
+  $("#adapterMode").disabled = connected;
   if (!connected) {
     armedUntil = 0;
     clearInterval(armTimer);
   }
+  refreshMode();
   refreshSafety();
 }
 
@@ -67,7 +75,23 @@ async function readLoop() {
         while (readLoopActive) {
           const { value, done } = await reader.read();
           if (done) break;
-          receiveBuffer += decoder.decode(value, { stream: true });
+          const decoded = decoder.decode(value, { stream: true });
+          if (adapterMode() === "vlinker") {
+            elmBuffer += decoded;
+            const prompt = elmBuffer.indexOf(">");
+            if (prompt >= 0 && elmPending) {
+              const response = elmBuffer.slice(0, prompt);
+              elmBuffer = elmBuffer.slice(prompt + 1);
+              const pending = elmPending;
+              elmPending = null;
+              clearTimeout(pending.timer);
+              response.split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean)
+                .forEach((line) => appendLog(line));
+              pending.resolve(response);
+            }
+            continue;
+          }
+          receiveBuffer += decoded;
           const lines = receiveBuffer.split(/\r?\n/);
           receiveBuffer = lines.pop() ?? "";
           for (const line of lines) {
@@ -97,9 +121,15 @@ async function connectSerial() {
     port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200, bufferSize: 4096 });
     setConnected(true);
-    appendLog("M5StickC Plus2 verbonden op 115200 baud", "system");
+    appendLog(adapterMode() === "vlinker"
+      ? "VLinker USB verbonden op 115200 baud"
+      : "M5StickC Plus2 verbonden op 115200 baud", "system");
     readLoop();
-    setTimeout(() => sendCommand("status"), 350);
+    if (adapterMode() === "vlinker") {
+      await initializeVlinker();
+    } else {
+      setTimeout(() => sendCommand("status"), 350);
+    }
   } catch (error) {
     appendLog(`Verbinding mislukt: ${error.message}`, "system");
   }
@@ -116,25 +146,175 @@ async function disconnectSerial() {
     }
     if (port) await port.close();
   } catch (_) {}
+  if (elmPending) {
+    clearTimeout(elmPending.timer);
+    elmPending.reject(new Error("USB-verbinding gesloten"));
+    elmPending = null;
+  }
   port = undefined;
-  setConnected(false);
+  refreshMode();
+setConnected(false);
   appendLog("USB-verbinding gesloten", "system");
+}
+
+async function writeSerialLine(line) {
+  if (!port?.writable) throw new Error("Geen USB-verbinding");
+  const writer = port.writable.getWriter();
+  try {
+    await writer.write(new TextEncoder().encode(`${line}\\r`));
+    appendLog(line, "tx");
+  } finally {
+    writer.releaseLock();
+  }
+}
+
+function elmCommand(command, timeout = 1800) {
+  if (elmPending) return Promise.reject(new Error("VLinker is nog bezig"));
+  return new Promise(async (resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (elmPending) elmPending = null;
+      reject(new Error(`Geen VLinker-antwoord op ${command}`));
+    }, timeout);
+    elmPending = { resolve, reject, timer };
+    try {
+      await writeSerialLine(command);
+    } catch (error) {
+      clearTimeout(timer);
+      elmPending = null;
+      reject(error);
+    }
+  });
+}
+
+function elmClean(response) {
+  return response.toUpperCase().replace(/SEARCHING\\.\\.\\./g, "")
+    .split(/\\r?\\n/).map((line) => line.replace(/\\s/g, ""))
+    .filter((line) => line && line !== "OK");
+}
+
+async function initializeVlinker() {
+  try {
+    await elmCommand("ATZ", 3000);
+    const identity = await elmCommand("ATI");
+    vlinkerInfo = identity.split(/\\r?\\n/).map((x) => x.trim())
+      .find((x) => /VLINK|ELM|STN/i.test(x)) || "ELM/STN USB";
+    for (const command of ["ATE0", "ATL0", "ATS0", "ATH1", "ATCAF0", "ATCFC0", "ATSP6", "ATST32"]) {
+      const response = await elmCommand(command);
+      if (/\\?|ERROR|UNABLE/i.test(response)) throw new Error(`${command} niet ondersteund`);
+    }
+    appendLog(`VLinker klaar: ${vlinkerInfo}; CAN 11-bit/500 kbit/s; read-only`, "system");
+    refreshMode();
+    await vlinkerIdentify();
+  } catch (error) {
+    appendLog(`VLinker-initialisatie mislukt: ${error.message}`, "system");
+  }
+}
+
+function sdoPayload(response) {
+  const line = elmClean(response).find((item) => item.startsWith("581") && item.length >= 19);
+  return line ? line.slice(3, 19) : null;
+}
+
+async function vlinkerSdoRead(index, sub) {
+  const idx = Number.parseInt(index, 16);
+  const si = Number.parseInt(sub, 16);
+  await elmCommand("ATSH601");
+  const frame = `40${(idx & 0xff).toString(16).padStart(2, "0")}${(idx >> 8).toString(16).padStart(2, "0")}${si.toString(16).padStart(2, "0")}00000000`.toUpperCase();
+  const response = await elmCommand(frame);
+  const payload = sdoPayload(response);
+  if (!payload) throw new Error(`Geen SDO 0x581-antwoord voor ${index}.${sub}`);
+  const command = payload.slice(0, 2);
+  const returnedIndex = payload.slice(4, 6) + payload.slice(2, 4);
+  const returnedSub = payload.slice(6, 8);
+  if (returnedIndex !== index.toUpperCase() || returnedSub !== sub.toUpperCase()) {
+    throw new Error("SDO-antwoord hoort bij een ander object");
+  }
+  const bytes = [payload.slice(8,10), payload.slice(10,12), payload.slice(12,14), payload.slice(14,16)];
+  const value = (Number.parseInt(bytes[0],16) |
+    (Number.parseInt(bytes[1],16) << 8) |
+    (Number.parseInt(bytes[2],16) << 16) |
+    (Number.parseInt(bytes[3],16) << 24)) >>> 0;
+  if (command === "80") throw new Error(`SDO abort 0x${value.toString(16).padStart(8,"0")}`);
+  if (!["4F","4B","47","43"].includes(command)) throw new Error(`Onverwacht SDO-commando 0x${command}`);
+  appendLog(`0x${index.toUpperCase()}.${sub.toUpperCase()} = 0x${value.toString(16).padStart(8,"0").toUpperCase()} (${value})`, "system");
+  return value;
+}
+
+async function vlinkerIdentify() {
+  const labels = ["vendor", "product", "revision", "serial"];
+  for (let sub = 1; sub <= 4; sub++) {
+    const value = await vlinkerSdoRead("1018", sub.toString(16).padStart(2,"0"));
+    appendLog(`${labels[sub-1]} = 0x${value.toString(16).padStart(8,"0").toUpperCase()}`, "system");
+    if (sub === 2) {
+      const pid = value.toString(16).padStart(8,"0").toUpperCase();
+      $("#controllerValue").textContent = pid;
+      $("#controllerValue").style.color = pid === "0712302D" ? "var(--lime)" : "var(--red)";
+    }
+  }
+}
+
+async function vlinkerFaults() {
+  const count = Math.min(32, await vlinkerSdoRead("1003", "00"));
+  appendLog(`Foutgeschiedenis: ${count} item(s)`, "system");
+  for (let sub = 1; sub <= count; sub++) {
+    await vlinkerSdoRead("1003", sub.toString(16).padStart(2,"0"));
+  }
+}
+
+async function handleVlinkerCommand(command) {
+  const [name, a, b, ...rest] = command.trim().split(/\\s+/);
+  if (name === "identify") return vlinkerIdentify();
+  if (name === "faults") return vlinkerFaults();
+  if (name === "diagnose") {
+    appendLog("VLinker-diagnose: adapter, identiteit en foutlog", "system");
+    await vlinkerIdentify();
+    return vlinkerFaults();
+  }
+  if (name === "status") {
+    appendLog(`Adapter=${vlinkerInfo}; CAN=11/500; directe VLinker-modus=read-only`, "system");
+    return vlinkerSdoRead("5110", "00");
+  }
+  if (name === "read" && validHex(a || "",4) && validHex(b || "",2)) return vlinkerSdoRead(a,b);
+  if (name === "queue" && validHex(a || "",4) && validHex(b || "",2) && rest.length) {
+    localQueue.push({ index:a.toUpperCase(), sub:b.toUpperCase(), value:rest.join(" ") });
+    appendLog(`Lokaal queued 0x${a.toUpperCase()}.${b.toUpperCase()} = ${rest.join(" ")} (read-only)`, "system");
+    return;
+  }
+  if (name === "show") {
+    if (!localQueue.length) return appendLog("Lokale VLinker-wachtrij is leeg", "system");
+    localQueue.forEach((item,i) => appendLog(`${i}: 0x${item.index}.${item.sub} = ${item.value}`, "system"));
+    return;
+  }
+  if (name === "inspect") {
+    for (const item of localQueue) {
+      const current = await vlinkerSdoRead(item.index,item.sub);
+      appendLog(`inspect 0x${item.index}.${item.sub}: huidig=${current}, gevraagd=${item.value}`, "system");
+    }
+    return;
+  }
+  if (name === "clear") {
+    localQueue.length = 0;
+    return appendLog("Lokale VLinker-wachtrij gewist", "system");
+  }
+  if (name === "help") {
+    return appendLog("VLinker: status, identify, faults, diagnose, read, queue, show, inspect, clear. Writes blijven uitgeschakeld.", "system");
+  }
+  if (name === "arm" || name === "apply") throw new Error("Writes zijn in VLinker-modus nog uitgeschakeld");
+  throw new Error(`Onbekend of ongeldig VLinker-commando: ${command}`);
 }
 
 async function sendCommand(command) {
   const clean = command.trim();
   if (!clean) return;
   if (!port?.writable) {
-    alert("Verbind eerst de M5StickC Plus2 via USB.");
+    alert("Verbind eerst het USB-apparaat.");
     return;
   }
-
-  const writer = port.writable.getWriter();
   try {
-    await writer.write(new TextEncoder().encode(`${clean}\n`));
-    appendLog(clean, "tx");
-  } finally {
-    writer.releaseLock();
+    if (adapterMode() === "vlinker") return await handleVlinkerCommand(clean);
+    await writeSerialLine(clean);
+  } catch (error) {
+    appendLog(error.message, "system");
   }
 }
 
@@ -142,8 +322,18 @@ function validHex(value, length) {
   return new RegExp(`^[0-9a-fA-F]{${length}}$`).test(value.trim());
 }
 
+function refreshMode() {
+  const vlinker = adapterMode() === "vlinker";
+  $("#fourthMetricLabel").textContent = vlinker ? "Adapter" : "Heartbeat";
+  $("#fourthMetricHint").textContent = vlinker ? "ELM327/STN via USB" : "SEVCON node 1";
+  $("#heartbeatValue").textContent = vlinker ? vlinkerInfo : "—";
+  $("#vlinkerWriteNotice").classList.toggle("hidden", !vlinker);
+  $(".danger-card").classList.toggle("vlinker-readonly", vlinker);
+}
+
 function refreshSafety() {
   const prerequisites =
+    adapterMode() === "m5" &&
     Boolean(port?.writable) &&
     safetyCheck.checked &&
     safetyCode.value.trim() === "V12";
@@ -238,6 +428,13 @@ $("#downloadLogButton").addEventListener("click", () => {
   link.download = `twizy-tool-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
   link.click();
   URL.revokeObjectURL(link.href);
+});
+
+$("#adapterMode").addEventListener("change", () => {
+  vlinkerInfo = "—";
+  localQueue.length = 0;
+  refreshMode();
+  refreshSafety();
 });
 
 navigator.serial?.addEventListener("disconnect", (event) => {
