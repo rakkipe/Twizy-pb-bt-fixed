@@ -19,6 +19,12 @@
         <p class="subtitle">Headless bediening voor M5StickC Plus2 via USB</p>
       </div>
       <div class="connection">
+        <label class="adapter-select">Verbinding
+          <select id="adapterMode">
+            <option value="m5">M5StickC Plus2 (USB)</option>
+            <option value="vlinker">VLinker USB (ELM/STN)</option>
+          </select>
+        </label>
         <div id="connectionBadge" class="badge offline"><i></i><span>Niet verbonden</span></div>
         <div class="button-row">
           <button id="connectButton" class="button primary">USB verbinden</button>
@@ -31,7 +37,7 @@
       <article class="metric"><span>Controller</span><strong id="controllerValue">—</strong><small>verwacht 0712302D</small></article>
       <article class="metric"><span>Snelheid</span><strong id="speedValue">—</strong><small>km/u</small></article>
       <article class="metric"><span>Versnelling</span><strong id="neutralValue">—</strong><small>Neutral vereist voor writes</small></article>
-      <article class="metric"><span>Heartbeat</span><strong id="heartbeatValue">—</strong><small>SEVCON node 1</small></article>
+      <article class="metric"><span id="fourthMetricLabel">Heartbeat</span><strong id="heartbeatValue">—</strong><small id="fourthMetricHint">SEVCON node 1</small></article>
     </section>
 
     <section class="workspace">
@@ -106,6 +112,7 @@
             <button id="applyButton" class="button danger-button" disabled>APPLY + rollbackbeveiliging</button>
           </div>
           <p id="armHint" class="hint">Bevestig de veiligheidsvoorwaarden om te ontgrendelen.</p>
+          <p id="vlinkerWriteNotice" class="notice hidden">VLinker USB staat in deze versie bewust op diagnose/read-only. Gebruik de M5StickC Plus2-modus voor transactionele writes en rollback.</p>
         </article>
 
         <article class="card terminal-card">
