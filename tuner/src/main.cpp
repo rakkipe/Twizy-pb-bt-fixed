@@ -319,9 +319,47 @@ void showQueue() {
   }
 }
 
+void identifyController() {
+  const uint8_t subs[] = {1, 2, 3, 4};
+  const char* labels[] = {"vendor", "product", "revision", "serial"};
+  for (size_t i = 0; i < 4; ++i) {
+    SdoResult result = readSdo(0x1018, subs[i]);
+    if (result.ok) {
+      Serial.printf("%s 0x1018.%02X = 0x%08lX\\n",
+                    labels[i], subs[i], result.value);
+    } else {
+      printSdoError("identify", 0x1018, subs[i], result);
+    }
+  }
+}
+
+void showFaultHistory() {
+  SdoResult count = readSdo(0x1003, 0x00);
+  if (!count.ok) {
+    printSdoError("fault-count", 0x1003, 0x00, count);
+    return;
+  }
+  const uint8_t entries = min(uint32_t(32), count.value);
+  Serial.printf("fault history entries=%u\\n", entries);
+  for (uint8_t sub = 1; sub <= entries; ++sub) {
+    SdoResult fault = readSdo(0x1003, sub);
+    if (!fault.ok) {
+      printSdoError("fault", 0x1003, sub, fault);
+      break;
+    }
+    Serial.printf("fault[%u] = 0x%08lX\\n", sub, fault.value);
+  }
+}
+
+void runDiagnosis() {
+  showStatus();
+  identifyController();
+  showFaultHistory();
+}
+
 void help() {
   Serial.println("Commands:");
-  Serial.println("  status");
+  Serial.println("  status | identify | faults | diagnose");
   Serial.println("  read <index_hex> <sub_hex>");
   Serial.println("  queue <index_hex> <sub_hex> <value>");
   Serial.println("  show | inspect | clear");
@@ -360,6 +398,9 @@ void handleLine(char* line) {
   while (*line == ' ') ++line;
   if (!strcmp(line, "help")) return help();
   if (!strcmp(line, "status")) return showStatus();
+  if (!strcmp(line, "identify")) return identifyController();
+  if (!strcmp(line, "faults")) return showFaultHistory();
+  if (!strcmp(line, "diagnose")) return runDiagnosis();
   if (!strcmp(line, "show")) return showQueue();
   if (!strcmp(line, "inspect")) return inspectQueue();
   if (!strcmp(line, "clear")) {
@@ -411,8 +452,13 @@ void handleLine(char* line) {
       Serial.println("queue full");
       return;
     }
-    queueItems[queueSize++] =
-        {uint16_t(index), uint8_t(sub), uint32_t(value), 0, false, false};
+    QueuedWrite& item = queueItems[queueSize++];
+    item.index = uint16_t(index);
+    item.sub = uint8_t(sub);
+    item.value = uint32_t(value);
+    item.original = 0;
+    item.snapshotValid = false;
+    item.written = false;
     Serial.printf("queued 0x%04X.%02X = 0x%08lX\n", index, sub, value);
     return;
   }
