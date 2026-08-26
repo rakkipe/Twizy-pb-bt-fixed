@@ -20,6 +20,7 @@ struct SdoResult {
   bool aborted = false;
   uint32_t value = 0;
   uint32_t abortCode = 0;
+  uint8_t responseCommand = 0;
 };
 
 struct QueuedWrite {
@@ -43,6 +44,7 @@ uint32_t safetySeenAt = 0;
 uint32_t physicalArmUntil = 0;
 uint32_t writeArmUntil = 0;
 bool buttonWasDown = false;
+bool buttonHoldAnnounced = false;
 uint32_t buttonDownAt = 0;
 
 bool deadlineActive(uint32_t deadline) {
@@ -110,6 +112,7 @@ SdoResult exchangeSdo(const uint8_t request[8], uint16_t index, uint8_t sub) {
       continue;
     }
 
+    result.responseCommand = response.data[0];
     result.value = uint32_t(response.data[4]) |
                    (uint32_t(response.data[5]) << 8) |
                    (uint32_t(response.data[6]) << 16) |
@@ -130,8 +133,10 @@ SdoResult readSdo(uint16_t index, uint8_t sub) {
                         sub, 0, 0, 0, 0};
   SdoResult result = exchangeSdo(request, index, sub);
   if (result.ok) {
-    // Expedited upload response: 0x4F/0x4B/0x43 or compatible.
-    result.ok = (result.aborted == false);
+    // Require an expedited upload response (0x4F/0x4B/0x47/0x43).
+    result.ok = !result.aborted &&
+                (result.responseCommand & 0xE0) == 0x40 &&
+                (result.responseCommand & 0x02) != 0;
   }
   return result;
 }
@@ -142,7 +147,7 @@ SdoResult writeSdo(uint16_t index, uint8_t sub, uint32_t value) {
                         sub, uint8_t(value), uint8_t(value >> 8),
                         uint8_t(value >> 16), uint8_t(value >> 24)};
   SdoResult result = exchangeSdo(request, index, sub);
-  result.ok = result.ok && !result.aborted;
+  result.ok = result.ok && !result.aborted && result.responseCommand == 0x60;
   return result;
 }
 
@@ -319,10 +324,36 @@ void help() {
   Serial.println("  status");
   Serial.println("  read <index_hex> <sub_hex>");
   Serial.println("  queue <index_hex> <sub_hex> <value>");
-  Serial.println("  show | clear");
+  Serial.println("  show | inspect | clear");
   Serial.println("  arm V12        (after holding Button A for 3 seconds)");
+  Serial.println("  inspect        (read-only snapshot/diff of queued registers)");
   Serial.println("  apply          (snapshot -> login -> pre-op -> write/readback -> op)");
   Serial.println("No TFT, no automatic profile writes, no v14 PMAP formulas.");
+}
+
+void inspectQueue() {
+  if (queueSize == 0) {
+    Serial.println("queue is empty");
+    return;
+  }
+  if (!stationaryAndNeutral()) {
+    Serial.println("DENIED: need fresh CAN evidence of 0.00 km/h and Neutral");
+    return;
+  }
+  if (!nmtStartIfStopped() || !loginLevel4()) return;
+  Serial.println("READ-ONLY INSPECTION: current -> requested");
+  for (size_t i = 0; i < queueSize; ++i) {
+    SdoResult current = readSdo(queueItems[i].index, queueItems[i].sub);
+    if (current.ok) {
+      Serial.printf("0x%04X.%02X : 0x%08lX -> 0x%08lX %s\\n",
+                    queueItems[i].index, queueItems[i].sub, current.value,
+                    queueItems[i].value,
+                    current.value == queueItems[i].value ? "(unchanged)" : "");
+    } else {
+      printSdoError("inspect", queueItems[i].index, queueItems[i].sub, current);
+    }
+  }
+  logout();
 }
 
 void handleLine(char* line) {
@@ -330,6 +361,7 @@ void handleLine(char* line) {
   if (!strcmp(line, "help")) return help();
   if (!strcmp(line, "status")) return showStatus();
   if (!strcmp(line, "show")) return showQueue();
+  if (!strcmp(line, "inspect")) return inspectQueue();
   if (!strcmp(line, "clear")) {
     queueSize = 0;
     Serial.println("queue cleared");
@@ -363,7 +395,18 @@ void handleLine(char* line) {
     else printSdoError("read", uint16_t(index), uint8_t(sub), result);
     return;
   }
-  if (sscanf(line, "queue %x %x %li", &index, &sub, &value) == 3) {
+  char valueToken[32] = {};
+  if (sscanf(line, "queue %x %x %31s", &index, &sub, valueToken) == 3) {
+    char* end = nullptr;
+    value = strtoul(valueToken, &end, 0);
+    if (!end || *end != 0) {
+      Serial.println("invalid value; use decimal or 0x-prefixed hexadecimal");
+      return;
+    }
+    if (index > 0xFFFF || sub > 0xFF) {
+      Serial.println("invalid CANopen index/subindex");
+      return;
+    }
     if (queueSize >= MAX_QUEUE) {
       Serial.println("queue full");
       return;
@@ -399,13 +442,17 @@ void pollCan() {
 
 void pollButton() {
   const bool down = digitalRead(BUTTON_A_PIN) == LOW;
-  if (down && !buttonWasDown) buttonDownAt = millis();
-  if (down && !buttonWasDown) Serial.println("Button A pressed...");
-  if (down && millis() - buttonDownAt >= 3000 &&
-      !deadlineActive(physicalArmUntil)) {
+  if (down && !buttonWasDown) {
+    buttonDownAt = millis();
+    buttonHoldAnnounced = false;
+    Serial.println("Button A pressed...");
+  }
+  if (down && !buttonHoldAnnounced && millis() - buttonDownAt >= 3000) {
     physicalArmUntil = millis() + 30000;
+    buttonHoldAnnounced = true;
     Serial.println("Physical arm window OPEN for 30 seconds; enter: arm V12");
   }
+  if (!down) buttonHoldAnnounced = false;
   buttonWasDown = down;
 }
 
@@ -414,7 +461,8 @@ void pollButton() {
 void setup() {
   Serial.begin(115200);
   delay(400);
-  pinMode(BUTTON_A_PIN, INPUT_PULLUP);
+  // GPIO37 is input-only; M5StickC Plus2 provides the external button pull-up.
+  pinMode(BUTTON_A_PIN, INPUT);
 
   const twai_general_config_t general =
       TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
