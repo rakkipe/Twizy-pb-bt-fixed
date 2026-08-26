@@ -17,7 +17,7 @@ The Drive SEVCON version table lists 2012/06 T80 controllers with software `0712
 
 The recorded vehicle state is STOP/no-GO with persistent fault `0x5044`. PMAP at `0x4611:01..0x12` had been corrupted by an earlier v14 sketch and was restored from a v12 OEM baseline, but `0x5044` remained. Writes to `0x3813:23` at 6000 and 18000 did not clear or uniquely trigger the condition. Fault lists `0x4100`, `0x4110`, and `0x5300` rejected clearing at operator level with abort `0x06010002`.
 
-Therefore this continuation compiles no CAN transmit or SDO-write path. The next evidence needed is one of:
+The default telemetry target compiles no CAN transmit or SDO-write path. A separate tuner target now implements the proven v12 transaction mechanics, but it intentionally contains no guessed tuning values. Performance writes remain gated until the STOP/no-GO condition is resolved and an OEM/known-good snapshot exists. The next evidence needed is one of:
 
 1. DVT identification of the object pair behind `0x5044`.
 2. A healthy matching-controller dump of `0x3813:01..0x3F` and `0x4611:01..0x12`.
@@ -25,4 +25,4 @@ Therefore this continuation compiles no CAN transmit or SDO-write path. The next
 
 ## Quarantined historical sequence
 
-The Drive export records an earlier sequence involving operator login, `0x2800:00` pre-op/op transitions, brake-safe writes, speed/power/PMAP/FMAP/recuperation/ramp writes, and `0x1003:00` history clearing. It is retained as investigation evidence only and is deliberately not implemented here.
+The Drive export records an earlier sequence involving operator login, `0x2800:00` pre-op/op transitions, brake-safe writes, speed/power/PMAP/FMAP/recuperation/ramp writes, and `0x1003:00` history clearing. It is retained as investigation evidence. Only the protocol-safe transaction mechanics are implemented in the isolated tuner target: identity/login, snapshot, pre-op/op transitions, queued writes, readback and rollback. Historical brake, speed, power, PMAP, FMAP, recuperation and ramp values are not embedded as presets until validated against the working v12 source or a healthy matching controller.

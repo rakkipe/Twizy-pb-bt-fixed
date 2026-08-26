@@ -200,9 +200,10 @@ void loop() {
   while (twai_receive(&message, 0) == ESP_OK) decodeFrame(message);
 
   static uint32_t lastSend = 0;
-  if (millis() - lastSend >= 500) {
+  // 5 Hz keeps the Android dashboard responsive without flooding BLE.
+  if (millis() - lastSend >= 200) {
     lastSend = millis();
     sendTelemetry();
   }
-  delay(2);
+  delay(1);
 }

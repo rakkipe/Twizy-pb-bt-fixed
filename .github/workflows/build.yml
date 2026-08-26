@@ -1,21 +1,15 @@
-name: Android
+name: PowerBox build
+
+permissions:
+  contents: write
 
 on:
   push:
-    paths:
-      - "app/**"
-      - "*.gradle.kts"
-      - "gradle/**"
-      - ".github/workflows/build.yml"
   pull_request:
-    paths:
-      - "app/**"
-      - "*.gradle.kts"
-      - "gradle/**"
-      - ".github/workflows/build.yml"
 
 jobs:
   android:
+    name: Android dashboard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,3 +21,60 @@ jobs:
         with:
           gradle-version: "8.7"
       - run: gradle assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twizypb-android
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+  firmware:
+    name: Headless telemetry firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: pio run -d firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twizypb-telemetry
+          path: firmware/.pio/build/m5stick-c-plus2/firmware.bin
+
+  tuner:
+    name: Headless tuner v12
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: pio run -d tuner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twizypb-tuner-v12
+          path: tuner/.pio/build/tuner-v12-headless/firmware.bin
+
+  release:
+    name: Publish shared release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, firmware, tuner]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - run: |
+          cp dist/twizypb-telemetry/firmware.bin TwizyPB-v1.0.0-telemetry-safe.bin
+          cp dist/twizypb-tuner-v12/firmware.bin TwizyPB-v1.0.0-tuner-v12.bin
+          cp dist/twizypb-android/app-debug.apk TwizyPB-v1.0.0-android.apk
+          sha256sum TwizyPB-v1.0.0-* > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            TwizyPB-v1.0.0-telemetry-safe.bin
+            TwizyPB-v1.0.0-tuner-v12.bin
+            TwizyPB-v1.0.0-android.apk
+            SHA256SUMS.txt

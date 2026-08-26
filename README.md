@@ -1,40 +1,55 @@
 # Twizy PowerBox BT — fixed
 
-Working continuation of [rakkipe/Twizy-pb-bt](https://github.com/rakkipe/Twizy-pb-bt) for a Renault Twizy 80 (2012).
+Working continuation of [rakkipe/Twizy-pb-bt](https://github.com/rakkipe/Twizy-pb-bt) for a Renault Twizy 80 (2012), SEVCON Gen4 software `0712.0001`.
 
-## Target hardware
+## PowerBox v1.0.0
 
-- M5StickC Plus2 with broken/removed TFT
-- M5 Unit CAN on the Grove port (ESP32 native TWAI, GPIO 32/33)
-- Twizy CAN bus at 500 kbit/s
-- Android BLE dashboard using Nordic UART Service
+This release packages all currently safe, supportable capabilities for the M5StickC Plus2 without TFT and the M5 Unit CAN on GPIO 32/33:
 
-## Current milestone
+- verified Twizy CAN telemetry and Serial CSV logging
+- BLE Nordic UART telemetry for the Android dashboard
+- headless Android companion app
+- raw CAN frame intake and health counters
+- integrated fast Twizy Tool commands for status, identity, fault history and diagnosis
+- CANopen SDO reads and controller identity verification
+- transactional v12 register tuning with snapshot, readback and rollback
+- physical plus software arming, stationary/Neutral gate and one-shot timeout
+- separate read-only inspection before applying a queued profile
+- reproducible Android and PlatformIO builds with downloadable CI artifacts
 
-This branch provides a safe telemetry baseline:
+## Two deliberately separate firmware modes
 
-- CAN controller runs in `TWAI_MODE_LISTEN_ONLY`
-- no CAN transmit, NMT, SDO write, relay control, or tuning command is compiled in
-- verified Twizy frame layouts from the Drive CAN object directory replace the earlier guessed decoders
-- BLE remains compatible with the existing Android app
-- serial CSV logging works without the TFT
+| Target | CAN mode | Purpose |
+|---|---|---|
+| `firmware/` | listen-only | Daily telemetry, BLE dashboard and logging; CAN transmit is impossible |
+| `tuner/` | normal | Bench diagnosis and controlled v12 tuning; Serial only, no TFT |
 
-The Drive SEVCON session records a persistent fault `0x5044` and a STOP/no-GO condition after earlier PMAP/FMAP changes. For that reason, write/tuning work stays quarantined until a healthy reference dump or DVT diagnosis identifies the conflicting object.
+Keeping the targets separate prevents a dashboard session from becoming an accidental tuning session.
 
-## Repository layout
+## Validated hardware and controller
 
-- `firmware/` — M5StickC Plus2 + M5 Unit CAN listen-only firmware
-- `app/` — migrated Android BLE dashboard
-- `docs/can-reference.md` — curated CAN layouts and decoder provenance
-- `docs/sevcon-session.md` — current SEVCON facts, open questions, and hard safety gate
-- `docs/source-audit.md` — comparison with the original repository and Drive material
+- M5StickC Plus2, TFT unused
+- M5 Unit CAN, ESP32 TWAI GPIO 32/33
+- Twizy CAN bus, 500 kbit/s
+- Twizy 80 model year 2012
+- SEVCON Gen4 PID `0712302D`, software `0712.0001`
 
-## First bench test
+## Build
 
-1. Build and flash the firmware with PlatformIO.
-2. Power the M5StickC Plus2 from USB before connecting CAN.
-3. Connect CAN-H, CAN-L and ground only; do not add a 120 Ω terminator to an already terminated vehicle bus.
-4. Open Serial at 115200 baud and confirm `CAN listen-only ready`.
-5. With ignition on, verify frame counters and plausible SOC/speed/voltage values.
-6. Connect the Android app to `TwizyPB` and compare values with Serial.
-7. Do not enable transmit while fault `0x5044` / STOP remains unresolved.
+```text
+pio run -d firmware
+pio run -d tuner
+gradle assembleDebug
+```
+
+GitHub Actions publishes both firmware binaries and validates the Android app.
+
+## Safety boundary
+
+The recorded vehicle has shown STOP/no-GO and persistent fault `0x5044` after historical PMAP/FMAP changes. The tuner therefore contains no guessed Normal/Sport/Race profile and no v14 PMAP generator. Active writes require the exact known-good v12 values or a validated matching-controller dump.
+
+Before any write: prove zero speed and Neutral on fresh CAN data, run `inspect`, keep an OEM snapshot, and bench-test. See [PowerBox v1.0.0](docs/release-v1.0.0.md), [Twizy Tool](docs/twizy-tool.md) and [SEVCON session](docs/sevcon-session.md).
+
+## Dank
+
+Bijzondere dank aan Michael Balzer voor Twizy-Cfg, het OVMS-team en alle Renault Twizy-bijdragers die de CANopen/SEVCON-kennis beschikbaar maakten. De volledige bronvermelding staat in [docs/acknowledgements.md](docs/acknowledgements.md) en [THIRD_PARTY.md](THIRD_PARTY.md).
