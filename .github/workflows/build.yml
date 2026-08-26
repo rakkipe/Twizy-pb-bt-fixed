@@ -56,28 +56,47 @@ jobs:
           name: twizypb-tuner-v12
           path: tuner/.pio/build/tuner-v12-headless/firmware.bin
 
+  gui:
+    name: Twizy Tool GUI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --check tools/twizy-tool-gui/app.js
+      - run: zip -r TwizyPB-tool-gui.zip tools/twizy-tool-gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twizypb-tool-gui
+          path: TwizyPB-tool-gui.zip
+
   release:
     name: Publish shared release
     if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Publish PowerBox v1.0.0'))
-    needs: [android, firmware, tuner]
+    needs: [android, firmware, tuner, gui]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
       - run: |
-          cp dist/twizypb-telemetry/firmware.bin TwizyPB-v1.0.0-telemetry-safe.bin
-          cp dist/twizypb-tuner-v12/firmware.bin TwizyPB-v1.0.0-tuner-v12.bin
-          cp dist/twizypb-android/app-debug.apk TwizyPB-v1.0.0-android.apk
-          sha256sum TwizyPB-v1.0.0-* > SHA256SUMS.txt
+          VERSION="${GITHUB_REF_NAME}"
+          if [ "${VERSION}" = "main" ]; then VERSION="v1.0.0"; fi
+          cp dist/twizypb-telemetry/firmware.bin "TwizyPB-${VERSION}-telemetry-safe.bin"
+          cp dist/twizypb-tuner-v12/firmware.bin "TwizyPB-${VERSION}-tuner-v12.bin"
+          cp dist/twizypb-android/app-debug.apk "TwizyPB-${VERSION}-android.apk"
+          cp dist/twizypb-tool-gui/TwizyPB-tool-gui.zip "TwizyPB-${VERSION}-tool-gui.zip"
+          sha256sum TwizyPB-${VERSION}-* > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: PowerBox v1.0.0
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: PowerBox ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
-            TwizyPB-v1.0.0-telemetry-safe.bin
-            TwizyPB-v1.0.0-tuner-v12.bin
-            TwizyPB-v1.0.0-android.apk
+            TwizyPB-*-telemetry-safe.bin
+            TwizyPB-*-tuner-v12.bin
+            TwizyPB-*-android.apk
+            TwizyPB-*-tool-gui.zip
             SHA256SUMS.txt
