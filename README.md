@@ -10,6 +10,7 @@ This release packages all currently safe, supportable capabilities for the M5Sti
 - BLE Nordic UART telemetry for the Android dashboard
 - headless Android companion app
 - raw CAN frame intake and health counters
+- integrated fast Twizy Tool commands for status, identity, fault history and diagnosis
 - CANopen SDO reads and controller identity verification
 - transactional v12 register tuning with snapshot, readback and rollback
 - physical plus software arming, stationary/Neutral gate and one-shot timeout
@@ -47,7 +48,7 @@ GitHub Actions publishes both firmware binaries and validates the Android app.
 
 The recorded vehicle has shown STOP/no-GO and persistent fault `0x5044` after historical PMAP/FMAP changes. The tuner therefore contains no guessed Normal/Sport/Race profile and no v14 PMAP generator. Active writes require the exact known-good v12 values or a validated matching-controller dump.
 
-Before any write: prove zero speed and Neutral on fresh CAN data, run `inspect`, keep an OEM snapshot, and bench-test. See [PowerBox v1.0.0](docs/release-v1.0.0.md) and [SEVCON session](docs/sevcon-session.md).
+Before any write: prove zero speed and Neutral on fresh CAN data, run `inspect`, keep an OEM snapshot, and bench-test. See [PowerBox v1.0.0](docs/release-v1.0.0.md), [Twizy Tool](docs/twizy-tool.md) and [SEVCON session](docs/sevcon-session.md).
 
 ## Dank
 
