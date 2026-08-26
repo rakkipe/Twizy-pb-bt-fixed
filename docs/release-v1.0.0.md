@@ -1,6 +1,6 @@
 # PowerBox v1.0.0 release
 
-Release candidate for the headless M5StickC Plus2 PowerBox.
+Release candidate for the headless M5StickC Plus2 PowerBox. The primary performance goal is the highest usable tractive force, not merely a higher top speed.
 
 ## Included
 
@@ -15,6 +15,7 @@ Release candidate for the headless M5StickC Plus2 PowerBox.
 | v12-style transactional tuning | tuner firmware | available with exact known-good values |
 | Automatic snapshot/readback/rollback | tuner firmware | available |
 | OEM restore | queue a saved snapshot and apply | available when a snapshot was captured |
+| Maximum-traction profile | tuner + documented limits | staged; apply only after healthy OEM snapshot |
 | Normal/Sport/Race presets | profile framework | intentionally unpopulated pending validated values |
 | TFT display | neither target | intentionally excluded |
 | Wi-Fi/web UI and OTA | future release | not included |
@@ -48,3 +49,14 @@ The pull request must pass:
 - PlatformIO build of `tuner/`
 
 The workflow uploads both `.bin` files as artifacts.
+
+## Maximum-traction target
+
+For the Twizy 80, the validated OVMS/Twizy-Cfg model identifies these controller-side ceilings:
+
+- peak torque: 70.125 Nm (128% of the 55 Nm default)
+- stator/boost current: 540 A (123% command ceiling)
+- mechanical power: approximately 17 kW
+- full Drive torque request: 1000 at `0x2920:01`
+
+These are ceilings, not a promise that the battery, motor, tyres or thermal state can sustain them. The release prioritizes low-speed torque and controlled ramp response; it does not raise motor RPM merely to claim a higher top speed. Because the vehicle history contains fault `0x5044` after PMAP/FMAP changes, the release does not auto-apply a generated maximum map. First capture a healthy complete OEM map and resolve GO. Then the maximum-traction map can be generated from the pinned OVMS equations, inspected, and committed through the existing rollback transaction.
