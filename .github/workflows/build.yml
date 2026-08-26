@@ -58,7 +58,7 @@ jobs:
 
   release:
     name: Publish shared release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Publish PowerBox v1.0.0'))
     needs: [android, firmware, tuner]
     runs-on: ubuntu-latest
     steps:
@@ -72,6 +72,9 @@ jobs:
           sha256sum TwizyPB-v1.0.0-* > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.0
+          name: PowerBox v1.0.0
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
             TwizyPB-v1.0.0-telemetry-safe.bin
