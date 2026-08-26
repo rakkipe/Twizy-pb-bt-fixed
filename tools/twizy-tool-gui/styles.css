@@ -38,6 +38,10 @@ h1 span { color: var(--cyan); }
 h2 { margin: 0; font-size: 1.22rem; letter-spacing: -.02em; }
 .subtitle { margin: 12px 0 0; color: var(--muted); }
 .connection { display: grid; justify-items: end; gap: 12px; }
+.adapter-select { display: grid; grid-template-columns: auto minmax(210px, 1fr); align-items: center; gap: 10px; }
+select { padding: 9px 34px 9px 11px; color: var(--text); border: 1px solid var(--line); border-radius: 9px; background: #0b1c2d; outline: none; }
+select:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(56,217,255,.1); }
+.hidden { display: none !important; }
 .badge { display: inline-flex; align-items: center; gap: 9px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(4, 12, 22, .72); }
 .badge i { width: 9px; height: 9px; border-radius: 50%; background: #627486; box-shadow: 0 0 0 4px rgba(98,116,134,.12); }
 .badge.online { color: var(--lime); border-color: rgba(140,240,138,.3); }
