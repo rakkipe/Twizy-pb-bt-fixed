@@ -1,21 +1,12 @@
-name: Android
+name: PowerBox build
 
 on:
   push:
-    paths:
-      - "app/**"
-      - "*.gradle.kts"
-      - "gradle/**"
-      - ".github/workflows/build.yml"
   pull_request:
-    paths:
-      - "app/**"
-      - "*.gradle.kts"
-      - "gradle/**"
-      - ".github/workflows/build.yml"
 
 jobs:
   android:
+    name: Android dashboard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,3 +18,33 @@ jobs:
         with:
           gradle-version: "8.7"
       - run: gradle assembleDebug
+
+  firmware:
+    name: Headless telemetry firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: pio run -d firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twizypb-telemetry
+          path: firmware/.pio/build/m5stick-c-plus2/firmware.bin
+
+  tuner:
+    name: Headless tuner v12
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: pio run -d tuner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twizypb-tuner-v12
+          path: tuner/.pio/build/tuner-v12-headless/firmware.bin
