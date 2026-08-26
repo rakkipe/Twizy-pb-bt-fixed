@@ -14,6 +14,8 @@ constexpr uint32_t HEARTBEAT_ID = 0x701;
 constexpr uint32_t STATUS_ID = 0x59B;
 constexpr uint32_t SPEED_ID = 0x599;
 constexpr size_t MAX_QUEUE = 64;
+constexpr uint32_t SDO_TIMEOUT_MS = 50;
+constexpr uint32_t TX_TIMEOUT_MS = 20;
 
 struct SdoResult {
   bool ok = false;
@@ -80,7 +82,7 @@ bool sendFrame(uint32_t id, const uint8_t* data, uint8_t length) {
   message.identifier = id;
   message.data_length_code = length;
   memcpy(message.data, data, length);
-  return twai_transmit(&message, pdMS_TO_TICKS(100)) == ESP_OK;
+  return twai_transmit(&message, pdMS_TO_TICKS(TX_TIMEOUT_MS)) == ESP_OK;
 }
 
 bool waitForSdo(uint16_t index, uint8_t sub, twai_message_t& response,
@@ -88,7 +90,7 @@ bool waitForSdo(uint16_t index, uint8_t sub, twai_message_t& response,
   const uint32_t deadline = millis() + timeoutMs;
   while (int32_t(deadline - millis()) > 0) {
     twai_message_t message;
-    if (twai_receive(&message, pdMS_TO_TICKS(2)) != ESP_OK) continue;
+    if (twai_receive(&message, pdMS_TO_TICKS(1)) != ESP_OK) continue;
     consumeVehicleFrame(message);
     if (message.identifier == SDO_RESPONSE_ID &&
         message.data_length_code == 8 &&
@@ -107,8 +109,8 @@ SdoResult exchangeSdo(const uint8_t request[8], uint16_t index, uint8_t sub) {
   for (int attempt = 1; attempt <= 3; ++attempt) {
     if (!sendFrame(SDO_REQUEST_ID, request, 8)) continue;
     twai_message_t response = {};
-    if (!waitForSdo(index, sub, response, 75)) {
-      delay(10);
+    if (!waitForSdo(index, sub, response, SDO_TIMEOUT_MS)) {
+      delay(2);
       continue;
     }
 
@@ -164,7 +166,7 @@ bool nmtStartIfStopped() {
   const uint8_t frame[2] = {0x01, 0x01};
   Serial.println("SEVCON heartbeat=STOPPED; sending targeted NMT Start");
   if (!sendFrame(NMT_ID, frame, 2)) return false;
-  delay(100);
+  delay(50);
   return true;
 }
 
