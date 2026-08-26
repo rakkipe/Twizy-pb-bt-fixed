@@ -4,7 +4,7 @@ This is a separate firmware target for the M5StickC Plus2 with a broken/removed 
 
 ## Basis retained from the working v12 path
 
-- SEVCON node 1, SDO request/response IDs `0x601/`0x581`
+- SEVCON node 1, SDO request/response IDs `0x601`/`0x581`
 - targeted NMT Start only when heartbeat `0x701` reports STOPPED
 - controller identity check: Twizy 80 PID `0x0712302D`
 - access-level-4 login through `0x5000:03=0`, `0x5000:02=0x4BDF`
@@ -32,6 +32,7 @@ status
 read 1018 02
 queue 2920 05 7250
 show
+inspect
 ```
 
 Hold Button A for three seconds, then:
@@ -50,3 +51,9 @@ The Drive report containing simplistic Normal/Sport/Race values is not used. It 
 ## Provenance
 
 The CANopen transaction, login and state-verification behavior is derived from Michael Balzer's LGPL Twizy-Cfg implementation and cross-checked against OVMS Renault Twizy SEVCON code. See `THIRD_PARTY.md`.
+
+## Maximum tractive force
+
+The pinned OVMS model for a standard Twizy 80 defines 55 Nm as stock and 70.125 Nm as the flux-map torque limit, with a 540 A boost-current ceiling and about 17 kW mechanical-power ceiling. The PowerBox treats these as hard maxima. It does not equate maximum torque with maximum RPM.
+
+Do not queue the maximum values while fault `0x5044` or STOP/no-GO is present. Capture the complete healthy OEM PMAP/FMAP first. The `inspect` command is intentionally read-only and shows every current-to-target difference before physical arming.
