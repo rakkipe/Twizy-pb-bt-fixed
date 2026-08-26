@@ -11,6 +11,7 @@ This release packages all currently safe, supportable capabilities for the M5Sti
 - headless Android companion app
 - raw CAN frame intake and health counters
 - integrated fast Twizy Tool commands for status, identity, fault history and diagnosis
+- polished Windows Web Serial GUI with buttons for every command, live log and guarded tuning
 - CANopen SDO reads and controller identity verification
 - transactional v12 register tuning with snapshot, readback and rollback
 - physical plus software arming, stationary/Neutral gate and one-shot timeout
@@ -53,3 +54,7 @@ Before any write: prove zero speed and Neutral on fresh CAN data, run `inspect`,
 ## Dank
 
 Bijzondere dank aan Michael Balzer voor Twizy-Cfg, het OVMS-team en alle Renault Twizy-bijdragers die de CANopen/SEVCON-kennis beschikbaar maakten. De volledige bronvermelding staat in [docs/acknowledgements.md](docs/acknowledgements.md) en [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## Twizy Tool GUI
+
+Open [tools/twizy-tool-gui](tools/twizy-tool-gui) and double-click `start-gui.bat`. Use current Chrome or Edge, click **USB verbinden**, and select the M5StickC Plus2. All firmware commands are available as buttons; write controls remain locked behind the physical Button A and the V12 confirmation flow.

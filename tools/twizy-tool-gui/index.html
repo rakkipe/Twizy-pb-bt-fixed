@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08111f">
+  <title>Twizy PowerBox Tool</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Renault Twizy 80 · SEVCON Gen4</p>
+        <h1>PowerBox <span>Twizy Tool</span></h1>
+        <p class="subtitle">Headless bediening voor M5StickC Plus2 via USB</p>
+      </div>
+      <div class="connection">
+        <label class="adapter-select">Verbinding
+          <select id="adapterMode">
+            <option value="m5">M5StickC Plus2 (USB)</option>
+            <option value="vlinker">VLinker USB (ELM/STN)</option>
+          </select>
+        </label>
+        <div id="connectionBadge" class="badge offline"><i></i><span>Niet verbonden</span></div>
+        <div class="button-row">
+          <button id="connectButton" class="button primary">USB verbinden</button>
+          <button id="disconnectButton" class="button ghost" disabled>Verbreken</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="status-grid">
+      <article class="metric"><span>Controller</span><strong id="controllerValue">—</strong><small>verwacht 0712302D</small></article>
+      <article class="metric"><span>Snelheid</span><strong id="speedValue">—</strong><small>km/u</small></article>
+      <article class="metric"><span>Versnelling</span><strong id="neutralValue">—</strong><small>Neutral vereist voor writes</small></article>
+      <article class="metric"><span id="fourthMetricLabel">Heartbeat</span><strong id="heartbeatValue">—</strong><small id="fourthMetricHint">SEVCON node 1</small></article>
+    </section>
+
+    <section class="workspace">
+      <div class="column">
+        <article class="card">
+          <div class="card-heading">
+            <div><p class="section-kicker">Twizy Tool</p><h2>Snelle diagnose</h2></div>
+            <span class="safe-label">LEZEN</span>
+          </div>
+          <div class="command-grid">
+            <button class="command" data-command="status"><b>Status</b><small>CAN, snelheid en Neutral</small></button>
+            <button class="command" data-command="identify"><b>Identiteit</b><small>VID, PID, revisie en serienummer</small></button>
+            <button class="command" data-command="faults"><b>Foutlog</b><small>SEVCON-foutgeschiedenis</small></button>
+            <button class="command accent" data-command="diagnose"><b>Volledige diagnose</b><small>Status + identiteit + fouten</small></button>
+            <button class="command" data-command="help"><b>Help</b><small>Alle firmwarecommando's</small></button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-heading">
+            <div><p class="section-kicker">CANopen</p><h2>Register lezen</h2></div>
+            <span class="safe-label">SDO READ</span>
+          </div>
+          <form id="readForm" class="inline-form">
+            <label>Index (hex)<input id="readIndex" value="1018" maxlength="4" pattern="[0-9A-Fa-f]{4}" required></label>
+            <label>Subindex (hex)<input id="readSub" value="02" maxlength="2" pattern="[0-9A-Fa-f]{2}" required></label>
+            <button class="button primary" type="submit">Lees register</button>
+          </form>
+          <div class="presets">
+            <button data-read="1018 02">Twizy 80 PID</button>
+            <button data-read="5000 01">Login-niveau</button>
+            <button data-read="5110 00">Controllerstaat</button>
+            <button data-read="1003 00">Aantal fouten</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-heading">
+            <div><p class="section-kicker">Profiel</p><h2>Transactiewachtrij</h2></div>
+            <span class="warning-label">VOORBEREIDEN</span>
+          </div>
+          <form id="queueForm" class="inline-form queue-form">
+            <label>Index<input id="queueIndex" placeholder="2920" maxlength="4" pattern="[0-9A-Fa-f]{4}" required></label>
+            <label>Sub<input id="queueSub" placeholder="05" maxlength="2" pattern="[0-9A-Fa-f]{2}" required></label>
+            <label>Waarde<input id="queueValue" placeholder="7250 of 0x..." required></label>
+            <button class="button warning" type="submit">Toevoegen</button>
+          </form>
+          <div class="button-row spread">
+            <button class="button ghost" data-command="show">Toon wachtrij</button>
+            <button class="button ghost" data-command="inspect">Inspecteer verschillen</button>
+            <button class="button ghost danger-text" data-command="clear">Wis wachtrij</button>
+          </div>
+        </article>
+      </div>
+
+      <div class="column">
+        <article class="card danger-card">
+          <div class="card-heading">
+            <div><p class="section-kicker danger">Beveiligde zone</p><h2>Tuning toepassen</h2></div>
+            <span class="danger-label">SDO WRITE</span>
+          </div>
+          <p class="notice">Alleen stilstaand in Neutral, met een gezonde GO-status en opgeslagen OEM-waarden. Niet gebruiken bij <code>0x5044</code> of STOP/no-GO.</p>
+          <ol class="safety-steps">
+            <li>Voer eerst <b>Volledige diagnose</b> en <b>Inspecteer verschillen</b> uit.</li>
+            <li>Houd Button A op de M5Stick drie seconden ingedrukt.</li>
+            <li>Bevestig hieronder en typ exact <code>V12</code>.</li>
+          </ol>
+          <label class="checkline"><input id="safetyCheck" type="checkbox"><span>Voertuig staat op 0,00 km/u, in Neutral en is beveiligd tegen bewegen.</span></label>
+          <label class="confirm-input">Bevestigingscode<input id="safetyCode" autocomplete="off" placeholder="Typ V12"></label>
+          <div class="danger-actions">
+            <button id="armButton" class="button warning" disabled>ARM V12</button>
+            <button id="applyButton" class="button danger-button" disabled>APPLY + rollbackbeveiliging</button>
+          </div>
+          <p id="armHint" class="hint">Bevestig de veiligheidsvoorwaarden om te ontgrendelen.</p>
+          <p id="vlinkerWriteNotice" class="notice hidden">VLinker USB staat in deze versie bewust op diagnose/read-only. Gebruik de M5StickC Plus2-modus voor transactionele writes en rollback.</p>
+        </article>
+
+        <article class="card terminal-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">Live</p><h2>Seriële uitvoer</h2></div>
+            <div class="button-row">
+              <button id="clearLogButton" class="icon-button">Wissen</button>
+              <button id="downloadLogButton" class="icon-button">Opslaan</button>
+            </div>
+          </div>
+          <pre id="terminal" aria-live="polite"><span class="muted">Verbind de M5StickC Plus2 om te beginnen.</span></pre>
+          <form id="manualForm" class="manual-form">
+            <input id="manualCommand" placeholder="Handmatig commando…" autocomplete="off">
+            <button class="button primary" type="submit">Stuur</button>
+          </form>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <span>PowerBox v1.0 · USB 115200 baud · TFT niet gebruikt</span>
+      <a href="https://github.com/rakkipe/Twizy-pb-bt-fixed" target="_blank" rel="noreferrer">GitHub-broncode</a>
+    </footer>
+  </main>
+
+  <dialog id="applyDialog">
+    <form method="dialog">
+      <p class="section-kicker danger">Laatste controle</p>
+      <h2>Profiel werkelijk toepassen?</h2>
+      <p>De tuner maakt eerst een snapshot, controleert elke write en rolt terug bij de eerste fout. Onderbreek USB of 12 V niet.</p>
+      <div class="dialog-actions">
+        <button value="cancel" class="button ghost">Annuleren</button>
+        <button id="confirmApplyButton" value="confirm" class="button danger-button">Ja, APPLY uitvoeren</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
