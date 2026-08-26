@@ -48,3 +48,7 @@ GitHub Actions publishes both firmware binaries and validates the Android app.
 The recorded vehicle has shown STOP/no-GO and persistent fault `0x5044` after historical PMAP/FMAP changes. The tuner therefore contains no guessed Normal/Sport/Race profile and no v14 PMAP generator. Active writes require the exact known-good v12 values or a validated matching-controller dump.
 
 Before any write: prove zero speed and Neutral on fresh CAN data, run `inspect`, keep an OEM snapshot, and bench-test. See [PowerBox v1.0.0](docs/release-v1.0.0.md) and [SEVCON session](docs/sevcon-session.md).
+
+## Dank
+
+Bijzondere dank aan Michael Balzer voor Twizy-Cfg, het OVMS-team en alle Renault Twizy-bijdragers die de CANopen/SEVCON-kennis beschikbaar maakten. De volledige bronvermelding staat in [docs/acknowledgements.md](docs/acknowledgements.md) en [THIRD_PARTY.md](THIRD_PARTY.md).
