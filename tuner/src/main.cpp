@@ -327,7 +327,7 @@ void identifyController() {
   for (size_t i = 0; i < 4; ++i) {
     SdoResult result = readSdo(0x1018, subs[i]);
     if (result.ok) {
-      Serial.printf("%s 0x1018.%02X = 0x%08lX\\n",
+      Serial.printf("%s 0x1018.%02X = 0x%08lX\n",
                     labels[i], subs[i], result.value);
     } else {
       printSdoError("identify", 0x1018, subs[i], result);
@@ -342,14 +342,14 @@ void showFaultHistory() {
     return;
   }
   const uint8_t entries = min(uint32_t(32), count.value);
-  Serial.printf("fault history entries=%u\\n", entries);
+  Serial.printf("fault history entries=%u\n", entries);
   for (uint8_t sub = 1; sub <= entries; ++sub) {
     SdoResult fault = readSdo(0x1003, sub);
     if (!fault.ok) {
       printSdoError("fault", 0x1003, sub, fault);
       break;
     }
-    Serial.printf("fault[%u] = 0x%08lX\\n", sub, fault.value);
+    Serial.printf("fault[%u] = 0x%08lX\n", sub, fault.value);
   }
 }
 
@@ -385,7 +385,7 @@ void inspectQueue() {
   for (size_t i = 0; i < queueSize; ++i) {
     SdoResult current = readSdo(queueItems[i].index, queueItems[i].sub);
     if (current.ok) {
-      Serial.printf("0x%04X.%02X : 0x%08lX -> 0x%08lX %s\\n",
+      Serial.printf("0x%04X.%02X : 0x%08lX -> 0x%08lX %s\n",
                     queueItems[i].index, queueItems[i].sub, current.value,
                     queueItems[i].value,
                     current.value == queueItems[i].value ? "(unchanged)" : "");
