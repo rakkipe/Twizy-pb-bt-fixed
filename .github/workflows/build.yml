@@ -65,6 +65,7 @@ jobs:
         with:
           node-version: "24"
       - run: node --check tools/twizy-tool-gui/app.js
+      - run: node --test tools/twizy-tool-gui/app.test.cjs
       - run: zip -r TwizyPB-tool-gui.zip tools/twizy-tool-gui
       - uses: actions/upload-artifact@v4
         with:

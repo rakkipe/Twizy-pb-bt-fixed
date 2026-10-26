@@ -8,6 +8,8 @@ let receiveBuffer = "";
 let logLines = [];
 let armedUntil = 0;
 let armTimer;
+let armPending = false;
+let armResponseTimer;
 let elmBuffer = "";
 let elmPending = null;
 let vlinkerInfo = "—";
@@ -42,14 +44,21 @@ function setConnected(connected) {
   badge.querySelector("span").textContent = connected ? "USB verbonden" : "Niet verbonden";
   $("#adapterMode").disabled = connected;
   if (!connected) {
-    armedUntil = 0;
-    clearInterval(armTimer);
+    clearArmState();
   }
   refreshMode();
   refreshSafety();
 }
 
 function parseLine(line) {
+  if (/^(?:DENIED|FATAL|ERROR)\b|write_arm=safe/i.test(line.trim())) {
+    clearArmState();
+  } else if (line.trim() === "ARMED for one transaction / 60 seconds" && armPending) {
+    armPending = false;
+    clearTimeout(armResponseTimer);
+    if (writePrerequisites()) startArmWindow();
+    else clearArmState();
+  }
   const status = line.match(/heartbeat=(0x[0-9A-Fa-f]+).*speed=([-\d.]+|nan).*neutral=(yes|no)/);
   if (status) {
     $("#heartbeatValue").textContent = status[1].toUpperCase();
@@ -62,6 +71,18 @@ function parseLine(line) {
     $("#controllerValue").textContent = identity[1].toUpperCase();
     $("#controllerValue").style.color =
       identity[1].toUpperCase() === "0712302D" ? "var(--lime)" : "var(--red)";
+  }
+}
+
+function consumeM5Data(decoded) {
+  receiveBuffer += decoded;
+  // Older bundled firmware emitted literal backslash-n; accept both framings.
+  const lines = receiveBuffer.split(/\r?\n|\\n/);
+  receiveBuffer = lines.pop() ?? "";
+  for (const line of lines) {
+    if (!line) continue;
+    appendLog(line);
+    parseLine(line);
   }
 }
 
@@ -85,20 +106,13 @@ async function readLoop() {
               const pending = elmPending;
               elmPending = null;
               clearTimeout(pending.timer);
-              response.split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean)
+              response.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
                 .forEach((line) => appendLog(line));
               pending.resolve(response);
             }
             continue;
           }
-          receiveBuffer += decoded;
-          const lines = receiveBuffer.split(/\r?\n/);
-          receiveBuffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line) continue;
-            appendLog(line);
-            parseLine(line);
-          }
+          consumeM5Data(decoded);
         }
       } finally {
         reader.releaseLock();
@@ -161,7 +175,7 @@ async function writeSerialLine(line) {
   if (!port?.writable) throw new Error("Geen USB-verbinding");
   const writer = port.writable.getWriter();
   try {
-    await writer.write(new TextEncoder().encode(`${line}\\r`));
+    await writer.write(new TextEncoder().encode(line + (adapterMode() === "vlinker" ? "\r" : "\n")));
     appendLog(line, "tx");
   } finally {
     writer.releaseLock();
@@ -187,8 +201,8 @@ function elmCommand(command, timeout = 1800) {
 }
 
 function elmClean(response) {
-  return response.toUpperCase().replace(/SEARCHING\\.\\.\\./g, "")
-    .split(/\\r?\\n/).map((line) => line.replace(/\\s/g, ""))
+  return response.toUpperCase().replace(/SEARCHING\.\.\./g, "")
+    .split(/\r?\n/).map((line) => line.replace(/\s/g, ""))
     .filter((line) => line && line !== "OK");
 }
 
@@ -196,11 +210,11 @@ async function initializeVlinker() {
   try {
     await elmCommand("ATZ", 3000);
     const identity = await elmCommand("ATI");
-    vlinkerInfo = identity.split(/\\r?\\n/).map((x) => x.trim())
+    vlinkerInfo = identity.split(/\r?\n/).map((x) => x.trim())
       .find((x) => /VLINK|ELM|STN/i.test(x)) || "ELM/STN USB";
     for (const command of ["ATE0", "ATL0", "ATS0", "ATH1", "ATCAF0", "ATCFC0", "ATSP6", "ATST32"]) {
       const response = await elmCommand(command);
-      if (/\\?|ERROR|UNABLE/i.test(response)) throw new Error(`${command} niet ondersteund`);
+      if (/\?|ERROR|UNABLE/i.test(response)) throw new Error(`${command} niet ondersteund`);
     }
     appendLog(`VLinker klaar: ${vlinkerInfo}; CAN 11-bit/500 kbit/s; read-only`, "system");
     refreshMode();
@@ -262,7 +276,7 @@ async function vlinkerFaults() {
 }
 
 async function handleVlinkerCommand(command) {
-  const [name, a, b, ...rest] = command.trim().split(/\\s+/);
+  const [name, a, b, ...rest] = command.trim().split(/\s+/);
   if (name === "identify") return vlinkerIdentify();
   if (name === "faults") return vlinkerFaults();
   if (name === "diagnose") {
@@ -303,18 +317,36 @@ async function handleVlinkerCommand(command) {
   throw new Error(`Onbekend of ongeldig VLinker-commando: ${command}`);
 }
 
-async function sendCommand(command) {
+async function sendCommand(command, { guardedWrite = false } = {}) {
   const clean = command.trim();
-  if (!clean) return;
+  if (!clean) return false;
+  if (/[\r\n]/.test(clean)) {
+    appendLog("Stuur slechts één commando per keer.", "system");
+    return false;
+  }
+  const name = clean.split(/\s+/)[0].toLowerCase();
+  if (name === "arm" || name === "apply") {
+    if (!guardedWrite || !writePrerequisites() || (name === "apply" && armedUntil <= Date.now())) {
+      appendLog("ARM en APPLY zijn uitsluitend via de beveiligde knoppen beschikbaar.", "system");
+      return false;
+    }
+    if (name === "apply") clearArmState(); // consume before transmission, even on failure
+  }
   if (!port?.writable) {
     alert("Verbind eerst het USB-apparaat.");
-    return;
+    return false;
   }
   try {
-    if (adapterMode() === "vlinker") return await handleVlinkerCommand(clean);
+    if (adapterMode() === "vlinker") {
+      await handleVlinkerCommand(clean);
+      return true;
+    }
     await writeSerialLine(clean);
+    return true;
   } catch (error) {
     appendLog(error.message, "system");
+    if (name === "arm" || name === "apply") clearArmState();
+    return false;
   }
 }
 
@@ -331,17 +363,29 @@ function refreshMode() {
   $(".danger-card").classList.toggle("vlinker-readonly", vlinker);
 }
 
-function refreshSafety() {
-  const prerequisites =
+function writePrerequisites() {
+  return (
     adapterMode() === "m5" &&
     Boolean(port?.writable) &&
     safetyCheck.checked &&
-    safetyCode.value.trim() === "V12";
-  armButton.disabled = !prerequisites;
+    safetyCode.value.trim() === "V12");
+}
+
+function clearArmState() {
+  armPending = false;
+  armedUntil = 0;
+  clearTimeout(armResponseTimer);
+  clearInterval(armTimer);
+  refreshSafety();
+}
+
+function refreshSafety() {
+  const prerequisites = writePrerequisites();
+  armButton.disabled = !prerequisites || armPending;
 
   const seconds = Math.max(0, Math.ceil((armedUntil - Date.now()) / 1000));
   applyButton.disabled = !prerequisites || seconds === 0;
-  armHint.textContent = seconds
+  armHint.textContent = armPending ? "Wachten op ARM-bevestiging van de firmware…" : seconds
     ? `Software-arm actief: nog ${seconds} seconden. APPLY is eenmalig.`
     : "Houd eerst Button A drie seconden vast en klik daarna ARM V12.";
 }
@@ -397,12 +441,19 @@ $("#manualForm").addEventListener("submit", (event) => {
   input.value = "";
 });
 
-safetyCheck.addEventListener("change", refreshSafety);
-safetyCode.addEventListener("input", refreshSafety);
+safetyCheck.addEventListener("change", clearArmState);
+safetyCode.addEventListener("input", clearArmState);
 
 armButton.addEventListener("click", async () => {
-  await sendCommand("arm V12");
-  startArmWindow();
+  clearArmState();
+  if (!writePrerequisites()) return;
+  armPending = true;
+  armResponseTimer = setTimeout(() => {
+    clearArmState();
+    appendLog("Geen ARM-bevestiging ontvangen; schrijven blijft geblokkeerd.", "system");
+  }, 5000);
+  refreshSafety();
+  if (!await sendCommand("arm V12", { guardedWrite: true })) clearArmState();
 });
 
 applyButton.addEventListener("click", () => applyDialog.showModal());
@@ -410,10 +461,7 @@ applyButton.addEventListener("click", () => applyDialog.showModal());
 applyDialog.addEventListener("close", async () => {
   if (applyDialog.returnValue !== "confirm") return;
   applyDialog.returnValue = "";
-  armedUntil = 0;
-  clearInterval(armTimer);
-  refreshSafety();
-  await sendCommand("apply");
+  await sendCommand("apply", { guardedWrite: true });
 });
 
 $("#clearLogButton").addEventListener("click", () => {
@@ -431,6 +479,7 @@ $("#downloadLogButton").addEventListener("click", () => {
 });
 
 $("#adapterMode").addEventListener("change", () => {
+  clearArmState();
   vlinkerInfo = "—";
   localQueue.length = 0;
   refreshMode();

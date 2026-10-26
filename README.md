@@ -58,3 +58,11 @@ Bijzondere dank aan Michael Balzer voor Twizy-Cfg, het OVMS-team en alle Renault
 ## Twizy Tool GUI
 
 Open [tools/twizy-tool-gui](tools/twizy-tool-gui) and double-click `start-gui.bat`. Use current Chrome or Edge, click **USB verbinden**, and select the M5StickC Plus2. All firmware commands are available as buttons; write controls remain locked behind the physical Button A and the V12 confirmation flow.
+
+The GUI enables APPLY only after the firmware acknowledges ARM. A denial,
+timeout, disconnect or changed confirmation clears the local arm window.
+The manual console rejects ARM/APPLY and multi-line commands; it cannot bypass
+the guarded buttons. M5 commands use newline framing and VLinker uses carriage
+return framing. Older firmware replies containing literal backslash-n are also
+recognized. Run `node --test tools/twizy-tool-gui/app.test.cjs` for the hardware-free
+regressions. These software checks do not replace physical controller validation.
